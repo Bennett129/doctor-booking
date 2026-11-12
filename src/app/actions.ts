@@ -20,14 +20,31 @@ import {
   rescheduleAppointment,
 } from "@/lib/appointments";
 
-export type FormState = { error?: string; success?: string };
+export type FormState = {
+  error?: string;
+  success?: string;
+  /** Which field the error is about, so the form can highlight it. */
+  field?: string;
+  /** What the user submitted, so a rejected form can be refilled instead of cleared. */
+  values?: Record<string, string>;
+};
 
 const startsAtSchema = z.iso.datetime({ error: "Please choose a time." });
+
+const PHONE_MESSAGE = "Please enter a valid phone number, e.g. 07700 900123.";
 
 const bookingSchema = z.object({
   patientName: z.string().trim().min(2, "Please enter your full name.").max(100),
   email: z.email("Please enter a valid email address.").max(200),
-  phone: z.string().trim().min(6, "Please enter a phone number.").max(30),
+  phone: z
+    .string()
+    .trim()
+    // Digits plus the usual separators, with 7 to 15 digits in total.
+    .regex(/^\+?[0-9 ()-]+$/, PHONE_MESSAGE)
+    .refine((value) => {
+      const digits = value.replace(/\D/g, "").length;
+      return digits >= 7 && digits <= 15;
+    }, PHONE_MESSAGE),
   reason: z.string().trim().max(300),
   startsAt: startsAtSchema,
 });
@@ -42,20 +59,29 @@ export async function bookAppointment(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const parsed = bookingSchema.safeParse({
-    patientName: formData.get("patientName") ?? "",
-    email: formData.get("email") ?? "",
-    phone: formData.get("phone") ?? "",
-    reason: formData.get("reason") ?? "",
-    startsAt: formData.get("startsAt") ?? "",
-  });
-  if (!parsed.success) return { error: firstError(parsed.error) };
+  const values = {
+    patientName: String(formData.get("patientName") ?? ""),
+    email: String(formData.get("email") ?? ""),
+    phone: String(formData.get("phone") ?? ""),
+    reason: String(formData.get("reason") ?? ""),
+    startsAt: String(formData.get("startsAt") ?? ""),
+  };
+
+  const parsed = bookingSchema.safeParse(values);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    return {
+      error: issue?.message ?? "Please check the form.",
+      field: String(issue?.path[0] ?? ""),
+      values,
+    };
+  }
 
   const result = await createAppointment({
     ...parsed.data,
     startsAt: new Date(parsed.data.startsAt),
   });
-  if (!result.ok) return { error: result.error };
+  if (!result.ok) return { error: result.error, field: "startsAt", values };
 
   redirect(`/manage/${result.value.manageToken}?status=booked`);
 }

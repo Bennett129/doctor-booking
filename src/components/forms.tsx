@@ -37,8 +37,28 @@ function Feedback({ state }: { state: FormState }) {
   return null;
 }
 
+function FieldError({ state, field }: { state: FormState; field: string }) {
+  if (state.field !== field || !state.error) return null;
+  return (
+    <p id={`${field}-error`} className="text-sm text-destructive">
+      {state.error}
+    </p>
+  );
+}
+
 export function BookingForm({ config }: { config: PickerConfig }) {
   const [state, action, pending] = useActionState(bookAppointment, empty);
+
+  // React clears a form after its action runs. The server sends back what was
+  // submitted, and using it as each field's default puts the text back.
+  const value = (name: string) => state.values?.[name] ?? "";
+  const invalid = (name: string) =>
+    state.field === name
+      ? { "aria-invalid": true, "aria-describedby": `${name}-error` }
+      : {};
+  const fieldError = Boolean(
+    state.field && ["patientName", "email", "phone", "reason"].includes(state.field),
+  );
 
   return (
     <form action={action} className="space-y-8">
@@ -55,19 +75,57 @@ export function BookingForm({ config }: { config: PickerConfig }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="patientName">Full name</Label>
-            <Input id="patientName" name="patientName" autoComplete="name" required />
+            <Input
+              id="patientName"
+              name="patientName"
+              autoComplete="name"
+              required
+              minLength={2}
+              maxLength={100}
+              defaultValue={value("patientName")}
+              {...invalid("patientName")}
+            />
+            <FieldError state={state} field="patientName" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" name="email" type="email" autoComplete="email" required />
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              required
+              maxLength={200}
+              defaultValue={value("email")}
+              {...invalid("email")}
+            />
+            <FieldError state={state} field="email" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="phone">Phone</Label>
-            <Input id="phone" name="phone" type="tel" autoComplete="tel" required />
+            <Input
+              id="phone"
+              name="phone"
+              type="tel"
+              autoComplete="tel"
+              required
+              // Checked in the browser before sending; the server checks again.
+              pattern={"\\+?[0-9 \\(\\)\\-]{7,20}"}
+              title="A phone number, e.g. 07700 900123"
+              defaultValue={value("phone")}
+              {...invalid("phone")}
+            />
+            <FieldError state={state} field="phone" />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="reason">Reason for visit (optional)</Label>
-            <Textarea id="reason" name="reason" rows={3} maxLength={300} />
+            <Textarea
+              id="reason"
+              name="reason"
+              rows={3}
+              maxLength={300}
+              defaultValue={value("reason")}
+            />
           </div>
         </div>
       </section>
@@ -76,7 +134,8 @@ export function BookingForm({ config }: { config: PickerConfig }) {
         <Button type="submit" size="lg" disabled={pending}>
           {pending ? "Booking…" : "Confirm appointment"}
         </Button>
-        <Feedback state={state} />
+        {/* Field problems are shown next to the field; anything else (no time chosen, slot taken) here. */}
+        {!fieldError && <Feedback state={state} />}
       </div>
     </form>
   );
